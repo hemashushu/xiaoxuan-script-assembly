@@ -1,0 +1,14 @@
+{
+    "name": "xiaoxuan-script-assembly",
+    "version": "1.0.0",
+    "main": "src/index.js",
+    "type": "module",
+    "scripts": {
+        "start": "http-server -p 8080",
+        "test": "node tests/index.js"
+    },
+    "author": "Hemashushu <hippospark@gmail.com>",
+    "license": "MPL-2.0",
+    "description": "",
+    "devDependencies": {}
+}
