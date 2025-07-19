@@ -4,7 +4,8 @@
 // the Mozilla Public License version 2.0 and additional exceptions.
 // For more details, see the LICENSE, LICENSE.additional, and CONTRIBUTING files.
 
-import { unsignedLEB128, encodeString, ieee754 } from "./encoding.js";
+import { unsignedLEB128, signedLEB128, encodeString, ieee754 } from "./encoding.js";
+import post_order_traverse from "./traverse.js";
 
 const flatten = (arr /* Array */) => [].concat.apply([], arr);
 
@@ -30,14 +31,44 @@ const Valtype = Object.freeze({
     f32: 0x7d
 });
 
+// https://webassembly.github.io/spec/core/binary/types.html#binary-blocktype
+const Blocktype = Object.freeze({
+    void: 0x40
+});
+
 // https://webassembly.github.io/spec/core/binary/instructions.html
 const Opcodes = Object.freeze({
+    block: 0x02,
+    loop: 0x03,
+    br: 0x0c,
+    br_if: 0x0d,
     end: 0x0b,
     call: 0x10,
     get_local: 0x20,
+    set_local: 0x21,
     f32_const: 0x43,
-    f32_add: 0x92
+    i32_eqz: 0x45,
+    f32_eq: 0x5b,
+    f32_lt: 0x5d,
+    f32_gt: 0x5e,
+    i32_and: 0x71,
+    f32_add: 0x92,
+    f32_sub: 0x93,
+    f32_mul: 0x94,
+    f32_div: 0x95
 });
+
+const binaryOpcode = {
+    "+": Opcodes.f32_add,
+    "-": Opcodes.f32_sub,
+    "*": Opcodes.f32_mul,
+    "/": Opcodes.f32_div,
+    "==": Opcodes.f32_eq,
+    ">": Opcodes.f32_gt,
+    "<": Opcodes.f32_lt,
+    "&&": Opcodes.i32_and
+};
+
 
 // http://webassembly.github.io/spec/core/binary/modules.html#export-section
 const ExportType = Object.freeze({
@@ -63,6 +94,12 @@ const encodeVector = (data /* Array */) => [
     ...flatten(data)
 ];
 
+// https://webassembly.github.io/spec/core/binary/modules.html#code-section
+const encodeLocal = (count, type /* Valtype */) => [
+    unsignedLEB128(count),
+    type
+];
+
 // https://webassembly.github.io/spec/core/binary/modules.html#sections
 // sections are encoded by their type followed by their vector contents
 const createSection = (sectionType /* Section */, data /* Array */) => [
@@ -72,27 +109,108 @@ const createSection = (sectionType /* Section */, data /* Array */) => [
 
 const codeFromAst = (ast /* Program */) => {
     const code = [];
+    const symbols = new Map(); // for local variable storage, entry is `{ identifier: local_variable_index }`
 
-    const emitExpression = (node /* ExpressionNode */) => {
-        switch (node.type) {
-            case "numberLiteral":
-                code.push(Opcodes.f32_const);
-                code.push(...ieee754(node.value));
-                break;
+    const localIndexForSymbol = (name) => {
+        if (!symbols.has(name)) {
+            symbols.set(name, symbols.size);
         }
+        return symbols.get(name);
     };
 
-    ast.forEach(statement => {
-        switch (statement.type) {
-            case "printStatement":
-                emitExpression(statement.expression);
-                code.push(Opcodes.call);
-                code.push(...unsignedLEB128(0)); /* function index 0 */
-                break;
-        }
-    });
+    const emitExpression = (node /* ExpressionNode */) =>
+        post_order_traverse(node, (node) => {
+            switch (node.type) {
+                case "numberLiteral":
+                    code.push(Opcodes.f32_const);
+                    code.push(...ieee754(node.value));
+                    break;
+                case "identifier":
+                    code.push(Opcodes.get_local);
+                    code.push(...unsignedLEB128(localIndexForSymbol(node.value)));
+                    break;
+                case "binaryExpression":
+                    code.push(binaryOpcode[node.operator]);
+                    break;
+            }
+        });
 
-    return code;
+    const emitStatements = (statements) =>
+        statements.forEach(statement => {
+            switch (statement.type) {
+                case "printStatement":
+                    emitExpression(statement.expression);
+                    code.push(Opcodes.call);
+                    code.push(...unsignedLEB128(0)); /* function index 0 */
+                    break;
+                case "variableDeclaration":
+                    emitExpression(statement.initializer);
+                    code.push(Opcodes.set_local);
+                    code.push(...unsignedLEB128(localIndexForSymbol(statement.name)));
+                    break;
+                case "variableAssignment":
+                    emitExpression(statement.value);
+                    code.push(Opcodes.set_local);
+                    code.push(...unsignedLEB128(localIndexForSymbol(statement.name)));
+                    break;
+                case "whileStatement":
+                    /*
+                    Generates a loop structure.
+
+                    For example, the following code:
+
+                    ```
+                    var f = 0
+                    while (f < 10)
+                        print f
+                        f = (f + 1)
+                    endwhile
+                    ```
+
+                    can be translated to the corresponding WASM structure:
+
+                    ```wat
+                    (block
+                        (loop
+                            ;; [loop condition]
+                            i32.eqz
+                            ;; [nested statements]
+                            br_if 1 ;; Exit loop if condition is false
+                            br 0    ;; Repeat loop
+                        )
+                    )
+                    ```
+                    */
+
+                    // outer block
+                    code.push(Opcodes.block);
+                    code.push(Blocktype.void);
+                    // inner loop
+                    code.push(Opcodes.loop);
+                    code.push(Blocktype.void);
+                    // compute the while expression
+                    emitExpression(statement.expression);
+                    code.push(Opcodes.i32_eqz);
+                    // br_if $label0
+                    code.push(Opcodes.br_if);
+                    code.push(...signedLEB128(1));
+                    // the nested logic
+                    emitStatements(statement.statements);
+                    // br $label1
+                    code.push(Opcodes.br);
+                    code.push(...signedLEB128(0));
+                    // end loop
+                    code.push(Opcodes.end);
+                    // end block
+                    code.push(Opcodes.end);
+                    break;
+            }
+        });
+
+    emitStatements(ast);
+
+    // currently, only f32 type local variables are supported.
+    return { code, localCount: symbols.size };
 };
 
 export const emitter = (ast /* Program */) => {
@@ -135,14 +253,23 @@ export const emitter = (ast /* Program */) => {
     const exportSection = createSection(
         Section.export,
         encodeVector([
-            [...encodeString("run"), ExportType.func, 0x01 /* function index */]
+            [
+                ...encodeString("run"), // the entry point function name
+                ExportType.func, // export type
+                0x01 // function public index
+            ]
         ])
     );
 
+    const { code, localCount } = codeFromAst(ast);
+
+    // currently, only f32 type local variables are supported.
+    const locals = localCount > 0 ? [encodeLocal(localCount, Valtype.f32)] : [];
+
     // the code section contains vectors of functions
     const functionBody = encodeVector([
-        emptyArray /** locals */,
-        ...codeFromAst(ast),
+        ...encodeVector(locals), // local variable list
+        ...code, // function body code
         Opcodes.end
     ]);
 

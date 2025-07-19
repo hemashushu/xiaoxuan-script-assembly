@@ -27,7 +27,19 @@ export const parse = tokens => {
     const tokenIterator = tokens[Symbol.iterator]();
     let currentToken = tokenIterator.next().value;
 
-    const eatToken = () => (currentToken = tokenIterator.next().value);
+    const isCurrentTokenKeyword = (name) =>
+        currentToken.value === name && currentToken.type === "keyword";
+
+    const eatToken = (value /* optional */) => {
+        if (value !== undefined && value !== currentToken.value) {
+            throw new ParserError(
+                `Unexpected token value, expected ${value}, received ${currentToken.value
+                }`,
+                currentToken
+            );
+        }
+        currentToken = tokenIterator.next().value
+    };
 
     const parseExpression = () => {
         let node /* ExpressionNode */;
@@ -39,19 +51,93 @@ export const parse = tokens => {
                 };
                 eatToken();
                 return node;
+
+            case "identifier":
+                node = { type: "identifier", value: currentToken.value };
+                eatToken();
+                return node;
+
+            case "parens":
+                eatToken("(");
+                const left = parseExpression();
+                const operator = currentToken.value;
+                eatToken();
+                const right = parseExpression();
+                eatToken(")");
+                return {
+                    type: "binaryExpression",
+                    left,
+                    right,
+                    operator
+                };
+
+            default:
+                throw new ParserError(
+                    `Unexpected token type ${currentToken.type}`,
+                    currentToken
+                );
         }
+    };
+
+    const parsePrintStatement = () => {
+        eatToken("print");
+        return {
+            type: "printStatement",
+            expression: parseExpression()
+        };
+    };
+
+    const parseWhileStatement = () => {
+        eatToken("while");
+
+        const expression = parseExpression();
+
+        const statements = [];
+        while (!isCurrentTokenKeyword("endwhile")) {
+            statements.push(parseStatement());
+        }
+
+        eatToken("endwhile");
+
+        return { type: "whileStatement", expression, statements };
+    };
+
+    const parseVariableAssignment = () => {
+        const name = currentToken.value;
+        eatToken();
+        eatToken("=");
+        return { type: "variableAssignment", name, value: parseExpression() };
+    };
+
+    const parseVariableDeclarationStatement = () => {
+        eatToken("var");
+        const name = currentToken.value;
+        eatToken();
+        eatToken("=");
+        return {
+            type: "variableDeclaration",
+            name,
+            initializer: parseExpression()
+        };
     };
 
     const parseStatement = () => {
         if (currentToken.type === "keyword") {
             switch (currentToken.value) {
                 case "print":
-                    eatToken();
-                    return {
-                        type: "printStatement",
-                        expression: parseExpression()
-                    };
+                    return parsePrintStatement();
+                case "var":
+                    return parseVariableDeclarationStatement();
+                case "while":
+                    return parseWhileStatement();
+                default:
+                    throw new ParserError(
+                        `Unknown keyword ${currentToken.value}`,
+                        currentToken
+                    );
             }
+        } else if (currentToken.type === "identifier") {
+            return parseVariableAssignment();
         }
     };
 

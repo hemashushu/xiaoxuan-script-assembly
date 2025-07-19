@@ -8,8 +8,10 @@ import { runTests as test_tokenizer } from "./tokenizer.js";
 import { runTests as test_parser } from "./parser.js";
 import { runTests as test_apps_interpreter } from "./interpreter.js";
 import { runTests as test_apps_compiler } from "./compiler.js";
+import { runTests as test_traverse } from "./traverse.js";
 
 async function runTests() {
+    test_traverse();
     test_tokenizer();
     test_parser();
     await test_apps_interpreter();

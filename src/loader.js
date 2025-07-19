@@ -40,17 +40,3 @@ async function loadScripts() {
 document.addEventListener("DOMContentLoaded", () => {
     loadScripts();
 });
-
-// If you want to run this in a browser, ensure you have a server running to serve the files,
-// as WebAssembly modules cannot be loaded from the file system directly in most browsers.
-//
-// To run the server, you can use the command:
-//
-// ```sh
-// export PATH=$PATH:${HOME}/.npm-packages/bin
-// echo "prefix=/home/yang/.npm-packages" >> ~/.npmrc # Optional
-// npm install --global --prefix ${HOME}/.npm-packages http-server
-// http-server [path] [options]
-// ```
-//
-// Now you can visit http://localhost:8080/demo.html to view your server

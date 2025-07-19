@@ -7,10 +7,19 @@
 const TokenType = Object.freeze({
     "number": "number",
     "keyword": "keyword",
-    "whitespace": "whitespace"
+    "whitespace": "whitespace",
+    "parens": "parens",
+    "operator": "operator",
+    "identifier": "identifier",
+    "assignment": "assignment"
 });
 
-export const keywords = ["print"];
+export const keywords = ["print", "var", "while", "endwhile"];
+
+export const operators = ["+", "-", "*", "/", "==", "<", ">", "&&"];
+
+const escapeRegEx = (text) =>
+    text.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
 
 export class TokenizerError extends Error {
     index;
@@ -38,7 +47,11 @@ const regexMatcher = (regex, type /* TokenType */) /* -> Matcher */ => (
 const matchers = [
     regexMatcher("^[.0-9]+", "number"),
     regexMatcher(`^(${keywords.join("|")})`, "keyword"),
-    regexMatcher("^\\s+", "whitespace")
+    regexMatcher("^\\s+", "whitespace"),
+    regexMatcher(`^(${operators.map(escapeRegEx).join("|")})`, "operator"),
+    regexMatcher(`^[a-z]`, "identifier"),
+    regexMatcher(`^=`, "assignment"),
+    regexMatcher("^[()]{1}", "parens")
 ];
 
 const locationForIndex = (input, index) => ({

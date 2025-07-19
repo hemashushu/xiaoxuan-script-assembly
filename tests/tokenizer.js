@@ -29,10 +29,10 @@ function test_consumes_whitespace() {
 
 function test_barfson_unrecognized_token() {
     assert.throws(() => {
-        const input = " print foo   print";
+        const input = " print $ print";
         tokenize(input);
     }, {
-        message: "Unexpected token f"
+        message: "Unexpected token $"
     });
 }
 
