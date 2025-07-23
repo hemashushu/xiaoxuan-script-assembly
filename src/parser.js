@@ -121,6 +121,16 @@ export const parse = tokens => {
         };
     };
 
+    const parseSetPixelStatement = () => {
+        eatToken("setpixel");
+        return {
+            type: "setpixelStatement",
+            x: parseExpression(),
+            y: parseExpression(),
+            color: parseExpression()
+        };
+    };
+
     const parseStatement = () => {
         if (currentToken.type === "keyword") {
             switch (currentToken.value) {
@@ -130,6 +140,8 @@ export const parse = tokens => {
                     return parseVariableDeclarationStatement();
                 case "while":
                     return parseWhileStatement();
+                case "setpixel":
+                    return parseSetPixelStatement();
                 default:
                     throw new ParserError(
                         `Unknown keyword ${currentToken.value}`,

@@ -7,16 +7,18 @@
 import { runtime } from "./compiler.js";
 
 async function executeCode(code /* string */) {
-    const output = document.querySelector("#output");
+
+    const display = new Uint8Array(10000); // 100x100 pixels
 
     const entry = await runtime(code, {
-        print: data => output.textContent += `${data}\n`,
+        print: data => console.log(data),
+        display
     });
 
     entry();
 }
 
-async function loadScripts() {
+async function loadAndRunEmbeddedScripts() {
     let scripts = document.querySelectorAll("script[type='text/xiaoxuan-script']");
 
     if (scripts.length === 0) {
@@ -29,14 +31,10 @@ async function loadScripts() {
             console.warn(`Script with id '${script.id}' is empty.`);
             continue;
         }
-
-        console.log(`Executing script: ${script.id || "anonymous"}`);
-        console.log(`====\n${code}\n===`);
-
         await executeCode(code);
     }
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-    loadScripts();
+    loadAndRunEmbeddedScripts();
 });
