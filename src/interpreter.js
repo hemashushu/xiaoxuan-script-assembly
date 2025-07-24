@@ -19,20 +19,31 @@ const applyOperator = (operator, left, right) => {
             return left / right;
         case "==":
             return left == right ? 1 : 0;
-        case ">":
-            return left > right ? 1 : 0;
         case "<":
             return left < right ? 1 : 0;
+        case ">":
+            return left > right ? 1 : 0;
+        case "<=":
+            return left <= right ? 1 : 0;
+        case ">=":
+            return left >= right ? 1 : 0;
         case "&&":
             return left && right;
     }
     throw Error(`Unknown binary operator ${operator}`);
 };
 
-export const runtime = async (src, { print, display }) => () => {
-    const tokens = tokenize(src);
-    const program = parse(tokens);
-    const symbols = new Map(); // for variable storage, entry is `{ identifier: value }`
+const executeProc = (
+    node, // ProcStatementNode
+    env, // Environment, e.g. `{ print, display }`
+    program, // Program
+    args //number[]
+) => {
+
+    // for local variable storage, entry is `{ identifier: local_variable_index }`
+    const symbols = new Map(
+        node.args.map((arg, index) => [arg.value, args[index]])
+    );
 
     const evaluateExpression = (expression /* ExpressionNode */) => {
         switch (expression.type) {
@@ -53,7 +64,7 @@ export const runtime = async (src, { print, display }) => () => {
         statements.forEach(statement => {
             switch (statement.type) {
                 case "printStatement":
-                    print(evaluateExpression(statement.expression));
+                    env.print(evaluateExpression(statement.expression));
                     break;
                 case "variableDeclaration":
                     symbols.set(
@@ -69,15 +80,39 @@ export const runtime = async (src, { print, display }) => () => {
                         executeStatements(statement.statements);
                     }
                     break;
-                case "setpixelStatement":
-                    const x = evaluateExpression(statement.x);
-                    const y = evaluateExpression(statement.y);
-                    const color = evaluateExpression(statement.color);
-                    display[y * 100 + x] = color;
+                case "ifStatement":
+                    if (evaluateExpression(statement.expression)) {
+                        executeStatements(statement.consequent);
+                    } else {
+                        executeStatements(statement.alternate);
+                    }
+                    break;
+                case "callStatement":
+                    if (statement.name === "setpixel") {
+                        const x = evaluateExpression(statement.args[0]);
+                        const y = evaluateExpression(statement.args[1]);
+                        const color = evaluateExpression(statement.args[2]);
+                        env.display[y * 100 + x] = color;
+                    } else {
+                        const procName = statement.name;
+                        const argValues = statement.args.map(arg =>
+                            evaluateExpression(arg)
+                        );
+                        const proc = program.find(f => f.name === procName);
+                        executeProc(proc, env, program, argValues);
+                    }
                     break;
             }
         });
     };
 
-    executeStatements(program);
+    executeStatements(node.statements);
+};
+
+export const runtime = async (src, env) => () => {
+    const tokens = tokenize(src);
+    const program = parse(tokens);
+    const main = program.find(f => f.name === "main");
+
+    executeProc(main, env, program);
 };

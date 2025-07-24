@@ -26,6 +26,7 @@ export class ParserError extends Error {
 export const parse = tokens => {
     const tokenIterator = tokens[Symbol.iterator]();
     let currentToken = tokenIterator.next().value;
+    let nextToken = tokenIterator.next().value;
 
     const isCurrentTokenKeyword = (name) =>
         currentToken.value === name && currentToken.type === "keyword";
@@ -38,7 +39,8 @@ export const parse = tokens => {
                 currentToken
             );
         }
-        currentToken = tokenIterator.next().value
+        currentToken = nextToken;
+        nextToken = tokenIterator.next().value;
     };
 
     const parseExpression = () => {
@@ -72,6 +74,7 @@ export const parse = tokens => {
                 };
 
             default:
+                console.log(tokens);
                 throw new ParserError(
                     `Unexpected token type ${currentToken.type}`,
                     currentToken
@@ -85,6 +88,31 @@ export const parse = tokens => {
             type: "printStatement",
             expression: parseExpression()
         };
+    };
+
+    const parseIfStatement = () => {
+        eatToken("if");
+
+        const expression = parseExpression();
+
+        let elseStatements = false;
+        const consequent = [];
+        const alternate = [];
+        while (!isCurrentTokenKeyword("endif")) {
+            if (isCurrentTokenKeyword("else")) {
+                eatToken("else");
+                elseStatements = true;
+            }
+            if (elseStatements) {
+                alternate.push(parseStatement());
+            } else {
+                consequent.push(parseStatement());
+            }
+        }
+
+        eatToken("endif");
+
+        return { type: "ifStatement", expression, consequent, alternate };
     };
 
     const parseWhileStatement = () => {
@@ -121,13 +149,54 @@ export const parse = tokens => {
         };
     };
 
-    const parseSetPixelStatement = () => {
-        eatToken("setpixel");
+    const parseCallStatementNode = () => {
+        const name = currentToken.value;
+        eatToken();
+
+        const args = parseCommaSeperatedList(() => parseExpression());
         return {
-            type: "setpixelStatement",
-            x: parseExpression(),
-            y: parseExpression(),
-            color: parseExpression()
+            type: "callStatement",
+            name,
+            args
+        };
+    };
+
+    function parseCommaSeperatedList(parseArgument) {
+        const args = [];
+        eatToken("(");
+        while (currentToken.value !== ")") {
+            args.push(parseArgument());
+            if (currentToken.value !== ")") {
+                eatToken(",");
+            }
+        }
+        eatToken(")");
+        return args;
+    }
+
+    const parseProcStatement = () => {
+        eatToken("proc");
+
+        const name = currentToken.value;
+        eatToken();
+
+        const args = parseCommaSeperatedList(() => {
+            const arg = { type: "identifier", value: currentToken.value };
+            eatToken();
+            return arg;
+        });
+
+        const statements = [];
+        while (!isCurrentTokenKeyword("endproc")) {
+            statements.push(parseStatement());
+        }
+        eatToken("endproc");
+
+        return {
+            type: "procStatement",
+            name,
+            args,
+            statements
         };
     };
 
@@ -140,8 +209,8 @@ export const parse = tokens => {
                     return parseVariableDeclarationStatement();
                 case "while":
                     return parseWhileStatement();
-                case "setpixel":
-                    return parseSetPixelStatement();
+                case "if":
+                    return parseIfStatement();
                 default:
                     throw new ParserError(
                         `Unknown keyword ${currentToken.value}`,
@@ -149,13 +218,17 @@ export const parse = tokens => {
                     );
             }
         } else if (currentToken.type === "identifier") {
-            return parseVariableAssignment();
+            if (nextToken.value === "=") {
+                return parseVariableAssignment();
+            } else {
+                return parseCallStatementNode();
+            }
         }
     };
 
-    const nodes /* StatementNode[] */ = [];
+    const nodes /* ProcStatementNode[] */ = [];
     while (currentToken) {
-        nodes.push(parseStatement());
+        nodes.push(parseProcStatement());
     }
 
     return nodes;

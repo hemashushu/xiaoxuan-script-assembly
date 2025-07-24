@@ -4,6 +4,8 @@ Compile TOY language to WebAssembly and run in the browser. The lexer, parser, a
 
 ## How to Run the Demo
 
+![Demo Screenshot](./demo/screenshot.png)
+
 To run this demo in your browser, you need to serve the files using a local web server, since most browsers do not allow loading WebAssembly modules directly from the file system.
 
 For example, to start the Node.js `http-server`, run:
